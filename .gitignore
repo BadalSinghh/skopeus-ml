@@ -1,0 +1,35 @@
+# Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Heavy Audio & Data
+*.wav
+*.bin
+*.zip
+*.tar.gz
+*.h5
+*.npy
+*.npz
+data/
+
+# Checkpoints (Keep certified production model!)
+*.pth
+*.ckpt
+*.pt
+!models/dncnn1d_production.pt
+
+# IDE & System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.sw?
