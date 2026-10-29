@@ -1,0 +1,57 @@
+# Synthetic Channel Degradation & Noise Configuration
+default_snr_db: 10.0
+snr_range: [-5.0, 20.0]
+
+# Additive White Gaussian Noise
+awgn:
+  enabled: true
+  snr_db: 10.0
+
+# Impulsive Noise (Atmospheric static & lightning clicks)
+impulsive:
+  enabled: true
+  probability: 0.005  # Fraction of samples corrupted
+  amplitude_factor: 1.5
+  duration_samples_range: [1, 5]
+
+# Burst Interference (Terrestrial land-mobile VHF transmitters & clock harmonics)
+burst:
+  enabled: true
+  burst_probability: 0.2  # Probability that a window contains a burst
+  min_duration_ms: 10.0
+  max_duration_ms: 50.0
+  burst_snr_db: -3.0
+
+# Narrowband Interference (Interfering carrier tones)
+narrowband:
+  enabled: true
+  num_tones_range: [1, 3]
+  freq_range_hz: [800.0, 4000.0]  # Overlapping APT passband
+  amplitude_ratio: 0.3
+
+# Time-Varying Amplitude Fading (Faraday rotation & antenna nulls)
+fading:
+  enabled: true
+  min_gain: 0.3
+  max_gain: 1.0
+  fading_frequency_hz: 0.5  # Slow antenna wobble / satellite rotation
+
+# Frequency Offset (Residual Doppler shift on subcarrier)
+frequency_offset:
+  enabled: true
+  max_offset_hz: 15.0  # Real-valued subcarrier modulation shift
+
+# Receiver Saturation & Clipping
+clipping:
+  enabled: true
+  threshold: 0.90  # Soft / hard saturation threshold
+
+# Combined Channel Simulation
+combined:
+  weights:
+    awgn: 1.0
+    impulsive: 0.3
+    burst: 0.2
+    narrowband: 0.2
+    fading: 0.3
+    clipping: 0.2

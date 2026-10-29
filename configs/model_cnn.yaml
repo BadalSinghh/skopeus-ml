@@ -1,0 +1,31 @@
+# 1D CNN Baseline Configuration
+model:
+  name: "cnn1d"
+  in_channels: 1
+  hidden_channels: 48
+  num_layers: 5
+  kernel_size: 7
+  residual_learning: true
+
+training:
+  batch_size: 8          # Conservative for RTX 3050 Laptop GPU
+  num_workers: 0          # Windows multiprocessing safety
+  pin_memory: true
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  num_epochs: 10
+  gradient_accumulation_steps: 1
+  max_grad_norm: 1.0
+  mixed_precision: true
+  early_stopping_patience: 5
+
+loss:
+  name: "mse"
+  lambda_time: 1.0
+  lambda_freq: 0.0
+
+scheduler:
+  type: "plateau"
+  factor: 0.5
+  patience: 2
+  min_lr: 0.00001

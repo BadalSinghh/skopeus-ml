@@ -1,0 +1,17 @@
+# Base Project Configuration
+project_name: "satellite-denoising"
+experiment_name: "phase2_minimal_dataset"
+seed: 42
+deterministic: true
+
+device:
+  preferred: "cuda"  # Auto-detects NVIDIA RTX 3050 Laptop GPU, falls back to CPU
+  mixed_precision: true  # PyTorch AMP FP16 on RTX 3050
+
+audio:
+  target_sample_rate: 20800  # 20.8 kHz is optimal for NOAA APT (5 samples / 4160 baud symbol)
+  to_mono: true
+  remove_dc: true
+  dc_cutoff_hz: 100.0
+  headroom_scale: 0.85  # -1.4 dBFS headroom to prevent digital clipping after noise addition
+  min_sqi_snr_db: 15.0  # Quality threshold for accepting reference segments

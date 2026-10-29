@@ -1,0 +1,34 @@
+# 1D U-Net Configuration for Satellite Signal Denoising
+model:
+  name: "unet1d"
+  in_channels: 1
+  out_channels: 1
+  base_channels: 16
+  channel_mults: [1, 2, 4, 8]
+  kernel_size: 7
+  norm_type: "group"
+  upsample_mode: "linear"
+  residual_learning: true
+
+training:
+  batch_size: 8          # RTX 3050 Laptop GPU safe
+  num_workers: 0          # Windows multiprocessing safe
+  pin_memory: true
+  learning_rate: 0.0003
+  weight_decay: 0.00001
+  num_epochs: 15
+  gradient_accumulation_steps: 1
+  max_grad_norm: 1.0
+  mixed_precision: true
+  early_stopping_patience: 5
+
+loss:
+  name: "mse"
+  lambda_time: 1.0
+  lambda_freq: 0.0
+
+scheduler:
+  type: "plateau"
+  factor: 0.5
+  patience: 2
+  min_lr: 0.00001

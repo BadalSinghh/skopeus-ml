@@ -1,0 +1,34 @@
+# Data Pipeline & Windowing Configuration
+raw_data_dir: "data/raw"
+output_data_dir: "data/processed"
+manifest_csv: "metadata/recordings.csv"
+splits_csv: "metadata/splits.csv"
+dataset_manifest_csv: "metadata/dataset_manifest.csv"
+
+# Preprocessing
+preprocessing:
+  target_sample_rate: 20800
+  to_mono: true
+  remove_dc: true
+  dc_cutoff_hz: 100.0
+  headroom_scale: 0.85
+  min_reference_snr_db: 15.0  # Quality threshold for clean reference target
+
+# Window Chunking
+chunking:
+  window_size: 4096   # ~0.197 seconds at 20.8 kHz (~410 APT symbols)
+  hop_size: 2048      # 50% overlap for continuous signal reconstruction
+  inference_hop_size: 2048
+
+# Recording-level split proportions (strictly by recording / pass ID)
+splitting:
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  split_by: "recording"  # Never split chunks from same recording across splits
+
+# Generation limits for Phase 2 minimal dataset
+generation:
+  max_segments_per_pass: 100
+  snr_levels: [-5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
+  noise_types: ["awgn", "impulsive", "burst", "narrowband", "fading", "combined"]
