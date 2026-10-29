@@ -7,7 +7,7 @@ import pytest
 import soundfile as sf
 import torch
 
-from src.models.dncnn1d import DnCNN1DDenoiser
+from models.dncnn1d import DnCNN1DDenoiser
 from scripts.inference_dncnn import load_production_model, denoise_audio_array, denoise_wav
 
 

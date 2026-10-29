@@ -5,7 +5,7 @@ Decodes real-valued 2400 Hz AM baseband satellite audio signals into 2D visual i
 Preserves exact research parameters:
 - sr = 20800 Hz
 - subcarrier = 2400 Hz
-- 4th-order Butterworth lowpass at 1800 Hz
+- 4th-order Butterworth lowpass at 1800 Hz+
 - Normalized cross-correlation coarse Sync A detection
 - Line tracking with +/-50 sample fine sync search
 - 2080 pixels/line (1040 px Channel A, 1040 px Channel B)

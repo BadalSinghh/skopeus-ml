@@ -16,7 +16,7 @@ Designed for seamless deployment on **Render** (free tier friendly with built-in
 ```text
        Vercel Frontend (https://skopeus.vercel.app)
                             │
-               POST /api/denoise/upload?decode=true (WAV file)
+               POST /api/process (WAV file)
                             ▼
        Render ML Microservice (https://skopeus-ml.onrender.com)
   ┌────────────────────────────────────────────────────────┐
@@ -30,7 +30,7 @@ Designed for seamless deployment on **Render** (free tier friendly with built-in
   │ 8. 2080 px Composite + 1040 px Channel A/B separation
   └────────────────────────────────────────────────────────┘
                             │
-                 Cleaned WAV + Base64 PNGs + Telemetry
+                 Cleaned 20.8 kHz WAV + Decoded PNGs + Sync Telemetry
                             ▼
        Interactive Mission Cockpit (SatDumpPipeline)
 ```

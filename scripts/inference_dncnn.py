@@ -30,9 +30,9 @@ import numpy as np
 import soundfile as sf
 import torch
 
-from src.models.dncnn1d import DnCNN1DDenoiser
-from src.data.preprocessing import preprocess_signal, resample_audio
-from src.data.chunking import slice_into_windows, reconstruct_from_windows
+from models.dncnn1d import DnCNN1DDenoiser
+from research.data.preprocessing import preprocess_signal, resample_audio
+from research.data.chunking import slice_into_windows, reconstruct_from_windows
 
 
 def load_production_model(

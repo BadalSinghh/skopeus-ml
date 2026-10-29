@@ -42,6 +42,32 @@ def compute_file_sha256(file_path: Union[str, Path]) -> str:
     return hasher.hexdigest()
 
 
+def verify_checkpoint(path: Union[str, Path]) -> Tuple[bool, str, str]:
+    """Verify checkpoint SHA-256 matches certified hash."""
+    p = Path(path)
+    if not p.is_file():
+        return False, "", f"File not found: {p}"
+    actual_sha = compute_file_sha256(p)
+    if actual_sha.lower() == CERTIFIED_SHA256.lower():
+        return True, actual_sha, "Checkpoint verified successfully"
+    return False, actual_sha, f"SHA-256 mismatch: expected {CERTIFIED_SHA256}, got {actual_sha}"
+
+
+def resolve_device(device_str: str = "auto") -> Tuple[torch.device, str]:
+    """Resolve device string to (torch.device, display_name)."""
+    d_lower = device_str.lower()
+    if d_lower == "auto":
+        if torch.cuda.is_available():
+            return torch.device("cuda"), "CUDA"
+        return torch.device("cpu"), "CPU"
+    elif d_lower.startswith("cuda"):
+        if torch.cuda.is_available():
+            return torch.device(device_str), "CUDA"
+        return torch.device("cpu"), "CPU"
+    else:
+        return torch.device("cpu"), "CPU"
+
+
 class DenoiseService:
     """Singleton-style service wrapping the certified DnCNN-1D model."""
 
@@ -50,32 +76,23 @@ class DenoiseService:
         self.requested_device = device
         self.device = self._resolve_device(device)
         self.model: Optional[DnCNN1DDenoiser] = None
-        self._load_and_verify_model()
+        self.is_verified, self.checkpoint_sha256, self.verify_msg = verify_checkpoint(self.checkpoint_path)
+        if self.is_verified:
+            self.load_model()
+
+    @classmethod
+    def get_instance(cls, device: str = "auto") -> "DenoiseService":
+        return get_denoise_service(device=device)
 
     def _resolve_device(self, device_str: str) -> torch.device:
-        if device_str.lower() == "auto":
-            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        elif device_str.lower().startswith("cuda"):
-            if not torch.cuda.is_available():
-                logger.warning("CUDA requested but not available. Falling back to CPU.")
-                return torch.device("cpu")
-            return torch.device(device_str)
-        else:
-            return torch.device("cpu")
+        dev, _ = resolve_device(device_str)
+        return dev
 
-    def _load_and_verify_model(self) -> None:
-        if not self.checkpoint_path.is_file():
-            raise FileNotFoundError(
-                f"Production checkpoint not found at: {self.checkpoint_path}."
-            )
-
-        actual_sha = compute_file_sha256(self.checkpoint_path)
-        if actual_sha != CERTIFIED_SHA256:
-            raise ValueError(
-                f"Security check failed! Checkpoint SHA-256 mismatch.\n"
-                f"Expected: {CERTIFIED_SHA256}\n"
-                f"Got:      {actual_sha}"
-            )
+    def load_model(self, device: Optional[str] = None) -> DnCNN1DDenoiser:
+        if device is not None:
+            self.device = self._resolve_device(device)
+        if not self.is_verified:
+            raise RuntimeError(f"Cannot load unverified production model: {self.verify_msg}")
 
         checkpoint = torch.load(self.checkpoint_path, map_location=self.device, weights_only=True)
         arch = checkpoint.get("architecture", {})
@@ -100,8 +117,12 @@ class DenoiseService:
         logger.info(
             "DnCNN-1D production model loaded on %s (SHA-256 verified: %s...)",
             self.device,
-            actual_sha[:12],
+            self.checkpoint_sha256[:12],
         )
+        return self.model
+
+    def _load_and_verify_model(self) -> None:
+        self.load_model()
 
     def preprocess_audio(self, raw_audio: np.ndarray, orig_sr: int) -> Tuple[np.ndarray, float]:
         """Apply standardized research preprocessing:
@@ -224,6 +245,12 @@ class DenoiseService:
         elapsed = time.perf_counter() - t_start
         throughput = input_duration / elapsed if elapsed > 0 else 0.0
 
+        gpu_name = (
+            torch.cuda.get_device_name(self.device)
+            if self.device.type == "cuda"
+            else "CPU"
+        )
+
         return {
             "success": True,
             "input_file": str(in_p.name),
@@ -235,6 +262,7 @@ class DenoiseService:
             "output_channels": 1,
             "output_duration_sec": round(len(cleaned_audio) / TARGET_SAMPLE_RATE, 3),
             "device": str(self.device).upper(),
+            "gpu_name": gpu_name,
             "processing_time_sec": round(elapsed, 3),
             "throughput_realtime_x": round(throughput, 1),
             "checkpoint_sha256": CERTIFIED_SHA256,

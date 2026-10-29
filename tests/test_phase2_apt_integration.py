@@ -23,8 +23,8 @@ import soundfile as sf
 import torch
 from fastapi.testclient import TestClient
 
-from server.app import app
-from server.apt_service import (
+from app import app
+from apt_service import (
     APT_TARGET_SR,
     PIXELS_PER_LINE,
     CHANNEL_WIDTH,
@@ -34,7 +34,7 @@ from server.apt_service import (
     matrix_to_png_bytes,
     matrix_to_data_url,
 )
-from server.denoise_service import denoise_wav
+from denoise_service import denoise_wav
 
 
 @pytest.fixture

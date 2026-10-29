@@ -67,11 +67,19 @@ app = FastAPI(
 )
 
 # CORS configuration for Vercel and local development
-cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
-if cors_origins_env == "*":
+allowed_origins_env = os.environ.get("ALLOWED_ORIGINS") or os.environ.get("CORS_ORIGINS", "")
+if allowed_origins_env == "*":
     origins = ["*"]
+elif allowed_origins_env:
+    origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 else:
-    origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+    origins = [
+        "https://skopeus.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -198,9 +206,10 @@ def root():
         "service": "Skopeus ML Satellite Denoising & APT Decoding Backend",
         "status": "online",
         "docs": "/docs",
-        "health": "/api/health",
+        "health": "/health",
         "ping": "/api/ping",
         "endpoints": {
+            "process": "POST /api/process",
             "upload": "POST /api/denoise/upload",
             "capture": "POST /api/denoise/capture",
             "decode": "POST /api/decode/apt",
@@ -208,9 +217,10 @@ def root():
     }
 
 
+@app.get("/health")
 @app.get("/api/health")
 def health():
-    """Health check endpoint."""
+    """Health check endpoint exposing service, model, and device status."""
     uptime = time.time() - SERVER_START_TIME
     try:
         service = get_denoise_service()
@@ -220,14 +230,25 @@ def health():
         model_ready = False
         device_str = f"ERROR: {e}"
 
+    import torch
+    cuda_avail = torch.cuda.is_available()
+
     return {
         "status": "ok" if model_ready else "degraded",
+        "service": "Skopeus ML API",
         "uptime_seconds": round(uptime, 2),
         "model_loaded": model_ready,
         "model_architecture": "DnCNN-1D (17 layers, 64 hidden channels, kernel 5)",
         "parameters": 309825,
+        "checkpoint": "dncnn1d_production.pt",
         "checkpoint_sha256": CERTIFIED_SHA256,
+        "model_verified": model_ready,
         "device": device_str,
+        "cuda_available": cuda_avail,
+        "gpu_name": torch.cuda.get_device_name(0) if cuda_avail else "CPU",
+        "decoder_available": True,
+        "torch_version": torch.__version__,
+        "pytorch_version": torch.__version__,
         "ping_bot": ping_bot.get_status(),
     }
 
@@ -240,6 +261,133 @@ def ping():
         "timestamp": time.time(),
         "uptime_seconds": round(time.time() - SERVER_START_TIME, 1),
     }
+
+
+@app.post("/api/process")
+async def process_audio_endpoint(
+    request: Request,
+    audio: Optional[UploadFile] = File(None),
+    file: Optional[UploadFile] = File(None),
+    audio_file: Optional[UploadFile] = File(None),
+    device: str = "auto",
+):
+    """Primary production pipeline endpoint:
+    Ingests WAV audio from Skopeus recorder, applies 20.8 kHz preprocessing,
+    runs DnCNN-1D neural denoising, decodes NOAA APT imagery, and returns
+    full telemetry, cleaned audio (WAV data URL), and rasterized channel images.
+    """
+    content_type = request.headers.get("content-type", "")
+    raw_bytes: bytes = b""
+    filename = "recording.wav"
+
+    if "multipart/form-data" in content_type:
+        upload = audio or file or audio_file
+        if upload is None:
+            form = await request.form()
+            upload = form.get("audio") or form.get("file") or form.get("audio_file")
+        if upload is not None and hasattr(upload, "read"):
+            raw_bytes = await upload.read()
+            filename = getattr(upload, "filename", "recording.wav") or "recording.wav"
+    else:
+        raw_bytes = await request.body()
+        filename = "recording.wav"
+
+    if not raw_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No audio payload provided. Send WAV via multipart 'audio' field or request body.",
+        )
+
+    if len(raw_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Audio payload exceeds maximum allowed size ({MAX_UPLOAD_BYTES // (1024*1024)} MB).",
+        )
+
+    _validate_wav_bytes(raw_bytes)
+
+    tmp_in = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    input_wav_path = Path(tmp_in.name)
+    tmp_out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    output_wav_path = Path(tmp_out.name)
+    tmp_in.close()
+    tmp_out.close()
+
+    try:
+        with open(input_wav_path, "wb") as f:
+            f.write(raw_bytes)
+
+        try:
+            info = sf.info(str(input_wav_path))
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Malformed audio stream: {e}",
+            )
+
+        # 1. Run production DnCNN-1D denoising pipeline
+        stats = denoise_wav(
+            input_wav_path=input_wav_path,
+            output_wav_path=output_wav_path,
+            device=device,
+        )
+
+        with open(output_wav_path, "rb") as f:
+            cleaned_bytes = f.read()
+
+        # 2. Run NOAA APT Decoder on the cleaned 20.8 kHz audio
+        decode_res = decode_apt_wav(output_wav_path)
+        audio_b64 = base64.b64encode(cleaned_bytes).decode("ascii")
+        meta = decode_res.get("metadata", {})
+
+        is_decoded = decode_res.get("success", False)
+
+        response_payload = {
+            "success": is_decoded,
+            "cleaned_audio": {
+                "mime_type": "audio/wav",
+                "sample_rate": stats.get("output_sample_rate", 20800),
+                "duration_seconds": stats.get("output_duration_sec", round(info.duration, 3)),
+                "data": f"data:audio/wav;base64,{audio_b64}",
+            },
+            "imagery": {
+                "full": decode_res.get("image"),
+                "channel_a": decode_res.get("channel_a"),
+                "channel_b": decode_res.get("channel_b"),
+            },
+            "decoder": {
+                "num_lines": meta.get("num_lines", 0),
+                "width": meta.get("width", 2080),
+                "sync_lock_percentage": meta.get("sync_lock_percentage", 0.0),
+                "average_sync_correlation": meta.get("avg_sync_correlation", 0.0),
+                "latency_ms": meta.get("decoder_latency_ms", 0.0),
+            },
+            "processing": {
+                "input_sample_rate": stats.get("input_sample_rate", info.samplerate),
+                "output_sample_rate": stats.get("output_sample_rate", 20800),
+                "input_duration_sec": stats.get("input_duration_sec", round(info.duration, 3)),
+                "processing_time_sec": stats.get("processing_time_sec", 0.0),
+                "throughput_realtime_x": stats.get("throughput_realtime_x", 0.0),
+                "device": str(stats.get("device", "AUTO")),
+                "checkpoint_sha256": str(stats.get("checkpoint_sha256", CERTIFIED_SHA256)),
+            },
+        }
+
+        if not is_decoded and "error" in decode_res:
+            response_payload["error"] = decode_res["error"]
+
+        return JSONResponse(response_payload)
+    finally:
+        if input_wav_path.exists():
+            try:
+                os.remove(input_wav_path)
+            except OSError:
+                pass
+        if output_wav_path.exists():
+            try:
+                os.remove(output_wav_path)
+            except OSError:
+                pass
 
 
 @app.post("/api/denoise/upload")

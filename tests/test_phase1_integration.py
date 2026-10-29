@@ -29,8 +29,8 @@ import soundfile as sf
 import torch
 from fastapi.testclient import TestClient
 
-from server.app import app
-from server.denoise_service import (
+from app import app
+from denoise_service import (
     CERTIFIED_SHA256,
     DEFAULT_CHECKPOINT_PATH,
     DenoiseService,
@@ -39,7 +39,7 @@ from server.denoise_service import (
     resolve_device,
     verify_checkpoint,
 )
-from src.models.dncnn1d import DnCNN1DDenoiser
+from models.dncnn1d import DnCNN1DDenoiser
 
 
 @pytest.fixture
@@ -310,7 +310,7 @@ def test_same_service_used_by_upload_and_capture(client, synthetic_wav_20k):
     wav_p, _, _ = synthetic_wav_20k
     wav_bytes = wav_p.read_bytes()
 
-    with patch("server.app.denoise_wav", wraps=denoise_wav) as mock_denoise:
+    with patch("app.denoise_wav", wraps=denoise_wav) as mock_denoise:
         # 1. Call upload
         client.post(
             "/api/denoise/upload",
