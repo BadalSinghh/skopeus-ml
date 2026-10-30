@@ -13,6 +13,12 @@ import tempfile
 import time
 from typing import Any, Dict, Optional
 
+# Limit OpenMP/MKL thread contention on containerized cloud CPUs (e.g. Render 0.1 vCPU)
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+import torch
+torch.set_num_threads(1)
+
 from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -324,6 +330,18 @@ async def process_audio_endpoint(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Malformed audio stream: {e}",
             )
+
+        # Cloud CPU latency guard (prevents exceeding cloud gateway timeouts on CPU containers)
+        max_cloud_sec = float(os.environ.get("MAX_CLOUD_DURATION_SEC", "0"))
+        if max_cloud_sec > 0 and info.duration > max_cloud_sec:
+            logger.warning(
+                "Audio duration (%.2fs) exceeds MAX_CLOUD_DURATION_SEC (%.2fs). Pre-slicing for cloud processing.",
+                info.duration,
+                max_cloud_sec,
+            )
+            aud_data, aud_sr = sf.read(str(input_wav_path), frames=int(max_cloud_sec * info.samplerate), dtype="float32")
+            sf.write(str(input_wav_path), aud_data, aud_sr, subtype="PCM_16")
+            info = sf.info(str(input_wav_path))
 
         # 1. Run production DnCNN-1D denoising pipeline
         stats = denoise_wav(

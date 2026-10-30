@@ -14,3 +14,9 @@ services:
         value: "https://skopeus.vercel.app,http://localhost:5173"
       - key: PING_INTERVAL_SECONDS
         value: "600"
+      - key: MAX_CLOUD_DURATION_SEC
+        value: "6.0"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
